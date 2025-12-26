@@ -1,0 +1,17 @@
+/* Mengatur font dan jarak agar lebih lega (minimalis) */
+.main {
+    background-color: #f8f9fa;
+}
+
+div.stMetric {
+    background-color: #ffffff;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.stPlotlyChart {
+    background-color: #ffffff;
+    border-radius: 15px;
+    padding: 10px;
+}
