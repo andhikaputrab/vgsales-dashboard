@@ -89,23 +89,51 @@ except Exception as e:
     st.stop()
 
 # --- 3. SIDEBAR CONTROLS ---
+# --- 3. SIDEBAR CONTROLS ---
 with st.sidebar:
     st.title("🎛️ Command Center")
     st.markdown("---")
     
-    # Range Tahun
+    # Range Tahun (Tetap)
     min_year, max_year = int(df['Year'].min()), int(df['Year'].max())
     selected_years = st.slider("📅 Periode Waktu", min_year, max_year, (1995, 2016))
     
-    # Filter Genre
+    # ---------------------------------------------------------
+    # FILTER GENRE (Hybrid: All + Multiselect)
+    # ---------------------------------------------------------
     all_genres = sorted(df['Genre'].unique())
-    selected_genres = st.multiselect("🎭 Filter Genre", all_genres, default=['Action', 'Sports', 'Role-Playing', 'Shooter'])
+    # Tambahkan opsi 'ALL GENRES' di paling awal list
+    genre_options = ['ALL GENRES'] + all_genres
     
-    # Filter Platform
+    # Default-nya kita set ke 'ALL GENRES' agar langsung muncul semua data
+    selected_genres_raw = st.multiselect("🎭 Filter Genre", genre_options, default=['ALL GENRES'])
+    
+    # LOGIKA PINTAR:
+    # 1. Jika user memilih 'ALL GENRES', maka kita anggap dia memilih semua genre.
+    # 2. Jika user memilih genre spesifik (Action, Puzzle), kita pakai pilihan itu.
+    # 3. Jika kosong, kita anggap semua (fail-safe).
+    
+    if 'ALL GENRES' in selected_genres_raw or not selected_genres_raw:
+        final_selected_genres = all_genres # Pakai list asli (tanpa string 'ALL GENRES')
+        # Opsional: Jika user memilih 'ALL' + 'Action', kita bisa memaksa UI hanya menampilkan 'ALL'
+        # tapi di backend tetap load semua.
+    else:
+        final_selected_genres = selected_genres_raw
+
+    # ---------------------------------------------------------
+    # FILTER PLATFORM (Hybrid: All + Multiselect)
+    # ---------------------------------------------------------
     all_platforms = sorted(df['Platform'].unique())
-    selected_platforms = st.multiselect("🎮 Filter Platform", all_platforms, default=['Wii', 'PS3', 'X360', 'DS', 'PS2'])
+    platform_options = ['ALL PLATFORMS'] + all_platforms
     
-    # Publisher (Optional)
+    selected_platforms_raw = st.multiselect("🎮 Filter Platform", platform_options, default=['ALL PLATFORMS'])
+    
+    if 'ALL PLATFORMS' in selected_platforms_raw or not selected_platforms_raw:
+        final_selected_platforms = all_platforms
+    else:
+        final_selected_platforms = selected_platforms_raw
+    
+    # Publisher (Biarkan Selectbox karena datanya terlalu banyak untuk multiselect)
     all_publishers = sorted(df['Publisher'].unique())
     selected_publisher = st.selectbox("🏢 Publisher (Opsional)", ["All Publishers"] + all_publishers)
     
@@ -116,11 +144,12 @@ with st.sidebar:
 # Apply Filters
 filtered_df = df[
     (df['Year'] >= selected_years[0]) & 
-    (df['Year'] <= selected_years[1]) & 
-    (df['Genre'].isin(selected_genres)) &
-    (df['Platform'].isin(selected_platforms))
+    (df['Year'] <= selected_years[1]) &
+    (df['Genre'].isin(final_selected_genres)) &      # Gunakan variabel hasil logika pintar tadi
+    (df['Platform'].isin(final_selected_platforms))   # Gunakan variabel hasil logika pintar tadi
 ]
 
+# Logika Filter Publisher (Tetap Selectbox)
 if selected_publisher != "All Publishers":
     filtered_df = filtered_df[filtered_df['Publisher'] == selected_publisher]
 
@@ -140,7 +169,7 @@ def update_chart_layout(fig, title=""):
 # --- 4. MAIN DASHBOARD ---
 
 st.title("Video Game Sales Dashboard 🚀")
-st.markdown(f"Market intelligence dashboard for video games from **{selected_years[0]}** to **{selected_years[1]}**.")
+st.markdown(f"Dashboard Intelijen Pasar untuk Video Game dari tahun **{selected_years[0]}** sampai **{selected_years[1]}**.")
 
 # KPI CARDS
 col1, col2, col3, col4 = st.columns(4)
@@ -156,6 +185,20 @@ with col4:
     st.metric("Top Publisher", top_pub)
 
 st.markdown("---")
+if not filtered_df.empty:
+    # Cari platform dengan penjualan tertinggi
+    top_platform_sales = filtered_df.groupby('Platform')['Global_Sales'].sum().idxmax()
+    top_platform_val = filtered_df.groupby('Platform')['Global_Sales'].sum().max()
+    
+    # Cari tahun paling cuan
+    best_year = filtered_df.groupby('Year')['Global_Sales'].sum().idxmax()
+    
+    st.info(f"""
+    💡 **Market Insight:** Pada periode **{selected_years[0]}-{selected_years[1]}**, pasar didominasi oleh platform **{top_platform_sales}** dengan total penjualan **${top_platform_val:,.1f}M**. 
+    Puncak penjualan industri terjadi pada tahun **{int(best_year)}**.
+    """)
+else:
+    st.warning("Data tidak tersedia untuk filter yang dipilih.")
 
 # CHAPTER 1: TRENDS
 st.header("1. Market Trends & Evolution")
@@ -164,11 +207,26 @@ tab1, tab2 = st.tabs(["🌊 Stream Area", "📊 Stacked Bar"])
 
 with tab1:
     sales_yearly = filtered_df.groupby(['Year', 'Genre'])['Global_Sales'].sum().reset_index()
+    
+    # Hitung Moving Average (misal: rata-rata 3 tahun) untuk melihat tren halus
+    sales_total_yearly = filtered_df.groupby('Year')['Global_Sales'].sum().reset_index()
+    sales_total_yearly['MA_3Year'] = sales_total_yearly['Global_Sales'].rolling(window=3).mean()
+
     fig_area = px.area(
         sales_yearly, x="Year", y="Global_Sales", color="Genre",
         color_discrete_sequence=NEON_PALETTE
     )
-    update_chart_layout(fig_area, "")
+    
+    # Tambahkan garis tren putus-putus di atas area chart
+    fig_area.add_scatter(
+        x=sales_total_yearly['Year'], 
+        y=sales_total_yearly['MA_3Year'], 
+        mode='lines',
+        name='3-Year Moving Avg',
+        line=dict(color='white', width=3, dash='dash')
+    )
+    
+    update_chart_layout(fig_area, "Global Sales Trend + Moving Average")
     st.plotly_chart(fig_area, use_container_width=True)
 
 with tab2:
@@ -178,10 +236,89 @@ with tab2:
     )
     update_chart_layout(fig_bar, "")
     st.plotly_chart(fig_bar, use_container_width=True)
-
-# CHAPTER 2: REGIONAL
+# --- CHAPTER 2: UNIVERSAL COMPARISON ---
 st.markdown("---")
-st.header("2. Regional Dominance")
+st.header("2. Sales Showdown ")
+st.caption("Bandingkan performa penjualan antar kategori (Genre, Platform, atau Publisher).")
+
+# 1. Pilih Kategori Perbandingan
+comp_category = st.radio(
+    "Pilih Kategori untuk Dibandingkan:",
+    ["Genre", "Platform", "Publisher"],
+    horizontal=True
+)
+
+# 2. Siapkan Data Dropdown Berdasarkan Kategori yang Dipilih
+# Kita ambil list unik dari kolom yang dipilih (misal: list semua Platform)
+item_list = sorted(filtered_df[comp_category].unique())
+
+# Cek agar tidak error jika data kosong akibat filter di sidebar
+if len(item_list) < 2:
+    st.warning("Data tidak cukup untuk melakukan perbandingan. Coba longgarkan filter di sidebar.")
+else:
+    # 3. UI Perbandingan
+    col_c1, col_c2 = st.columns(2)
+    
+    with col_c1:
+        st.subheader("Kubu A 🔵")
+        # Default index 0 (item pertama)
+        item_a = st.selectbox(f"Pilih {comp_category} A", item_list, index=0, key='item_a')
+        
+        # Hitung Metrik A
+        val_a = filtered_df[filtered_df[comp_category] == item_a]['Global_Sales'].sum()
+        st.metric(f"Total Sales {item_a}", f"${val_a:,.1f}M")
+
+    with col_c2:
+        st.subheader("Kubu B 🔴")
+        # Default index 1 (item kedua) agar tidak sama dengan A
+        def_idx = 1 if len(item_list) > 1 else 0
+        item_b = st.selectbox(f"Pilih {comp_category} B", item_list, index=def_idx, key='item_b')
+        
+        # Hitung Metrik B
+        val_b = filtered_df[filtered_df[comp_category] == item_b]['Global_Sales'].sum()
+        
+        # Hitung Delta (Selisih Persentase)
+        if val_a > 0:
+            delta_val = ((val_b - val_a) / val_a) * 100
+            st.metric(f"Total Sales {item_b}", f"${val_b:,.1f}M", f"{delta_val:+.1f}% vs {item_a}")
+        else:
+            st.metric(f"Total Sales {item_b}", f"${val_b:,.1f}M")
+
+    # 4. Visualisasi Trend Perbandingan
+    st.subheader(f"Trend Battle: {item_a} vs {item_b}")
+    
+    # Filter data hanya untuk 2 item yang dipilih
+    comp_df = filtered_df[filtered_df[comp_category].isin([item_a, item_b])]
+    
+    # Grouping berdasarkan Tahun dan Kategori terpilih
+    trend_comp = comp_df.groupby(['Year', comp_category])['Global_Sales'].sum().reset_index()
+    
+    fig_comp = px.line(
+        trend_comp, 
+        x='Year', 
+        y='Global_Sales', 
+        color=comp_category, # Warna otomatis beda berdasarkan kategori
+        markers=True,
+        color_discrete_sequence=['#00C9FF', '#FF2975'] # Biru vs Merah Neon
+    )
+    update_chart_layout(fig_comp, f"Head-to-Head History ({item_a} vs {item_b})")
+    st.plotly_chart(fig_comp, use_container_width=True)
+    
+    # 5. Insight Tambahan (Optional)
+    # Menunjukkan game terlaris dari masing-masing kubu
+    col_best1, col_best2 = st.columns(2)
+    with col_best1:
+        best_game_a = filtered_df[filtered_df[comp_category] == item_a].nlargest(1, 'Global_Sales')
+        if not best_game_a.empty:
+            st.caption(f"🏆 Top Game ({item_a}): **{best_game_a.iloc[0]['Name']}**")
+            
+    with col_best2:
+        best_game_b = filtered_df[filtered_df[comp_category] == item_b].nlargest(1, 'Global_Sales')
+        if not best_game_b.empty:
+            st.caption(f"🏆 Top Game ({item_b}): **{best_game_b.iloc[0]['Name']}**")
+# CHAPTER 3: REGIONAL
+st.markdown("---")
+st.header("3. Regional Dominance")
 
 col_reg1, col_reg2 = st.columns([2, 1])
 
@@ -222,15 +359,20 @@ hm_data = filtered_df.groupby('Genre')[['NA_Sales', 'EU_Sales', 'JP_Sales', 'Oth
 hm_norm = hm_data.div(hm_data.sum(axis=1), axis=0)
 
 fig_hm = px.imshow(
-    hm_norm, x=['North America', 'Europe', 'Japan', 'Other'],
-    labels=dict(color="Share"), color_continuous_scale="Viridis", text_auto=".0%"
+    hm_norm, 
+    x=['North America', 'Europe', 'Japan', 'Other'],
+    labels=dict(color="Share"), 
+    color_continuous_scale="Viridis", 
+    text_auto=".0%",
+    aspect="auto"  # <--- TAMBAHKAN INI
 )
+
 update_chart_layout(fig_hm)
 st.plotly_chart(fig_hm, use_container_width=True)
 
-# CHAPTER 3: PLATFORM WARS (Logic Reverted to Filtered DF)
+# CHAPTER 4: PLATFORM WARS (Logic Reverted to Filtered DF)
 st.markdown("---")
-st.header("3. The Console Wars")
+st.header("4. The Console Wars")
 st.caption("Menampilkan tren penjualan platform berdasarkan filter yang Anda pilih.")
 
 # Menggunakan filtered_df langsung (Sesuai Permintaan)
@@ -245,9 +387,10 @@ fig_war = px.line(
 update_chart_layout(fig_war, f"Platform Trends ({selected_years[0]}-{selected_years[1]})")
 st.plotly_chart(fig_war, use_container_width=True)
 
-# CHAPTER 4: HALL OF FAME
+
+# CHAPTER 5: HALL OF FAME
 st.markdown("---")
-st.header("4. Hall of Fame 🏆")
+st.header("5. Hall of Fame 🏆")
 
 top_games = filtered_df.nlargest(100, 'Global_Sales')[['Rank', 'Name', 'Platform', 'Year', 'Genre', 'Publisher', 'Global_Sales']]
 
@@ -264,7 +407,6 @@ st.dataframe(
     hide_index=True,
     height=500
 )
-
 # Footer
 # st.markdown("""
 # <br>
