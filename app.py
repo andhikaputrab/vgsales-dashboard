@@ -203,21 +203,43 @@ else:
 # CHAPTER 1: TRENDS
 st.header("1. Market Trends & Evolution")
 
+# 1. Tambahkan Pilihan Region (Agar user bisa ganti-ganti Global, NA, EU, JP)
+region_map = {
+    "Global Sales": "Global_Sales",
+    "North America Sales": "NA_Sales",
+    "Europe Sales": "EU_Sales",
+    "Japan Sales": "JP_Sales",
+    "Other Regions": "Other_Sales"
+}
+
+selected_region_label = st.selectbox(
+    "Pilih Wilayah Penjualan:",
+    list(region_map.keys())
+)
+y_col = region_map[selected_region_label] # Mengambil nama kolom asli (misal: 'NA_Sales')
+
 tab1, tab2 = st.tabs(["🌊 Stream Area", "📊 Stacked Bar"])
 
 with tab1:
-    sales_yearly = filtered_df.groupby(['Year', 'Genre'])['Global_Sales'].sum().reset_index()
+    # 2. Group by menggunakan kolom wilayah yang DIPILIH (y_col)
+    sales_yearly = filtered_df.groupby(['Year', 'Genre'])[y_col].sum().reset_index()
     
-    # Hitung Moving Average (misal: rata-rata 3 tahun) untuk melihat tren halus
-    sales_total_yearly = filtered_df.groupby('Year')['Global_Sales'].sum().reset_index()
-    sales_total_yearly['MA_3Year'] = sales_total_yearly['Global_Sales'].rolling(window=3).mean()
+    # Hitung Moving Average berdasarkan wilayah yang dipilih
+    sales_total_yearly = filtered_df.groupby('Year')[y_col].sum().reset_index()
+    sales_total_yearly['MA_3Year'] = sales_total_yearly[y_col].rolling(window=3).mean()
 
+    # 3. Plot Area Chart
     fig_area = px.area(
-        sales_yearly, x="Year", y="Global_Sales", color="Genre",
-        color_discrete_sequence=NEON_PALETTE
+        sales_yearly, 
+        x="Year", 
+        y=y_col, 
+        color="Genre",
+        color_discrete_sequence=NEON_PALETTE,
+        # Format label agar jelas dalam 'Millions'
+        labels={y_col: f"{selected_region_label} (Millions)", "Year": "Year"}
     )
     
-    # Tambahkan garis tren putus-putus di atas area chart
+    # Tambahkan garis tren putus-putus
     fig_area.add_scatter(
         x=sales_total_yearly['Year'], 
         y=sales_total_yearly['MA_3Year'], 
@@ -226,16 +248,26 @@ with tab1:
         line=dict(color='white', width=3, dash='dash')
     )
     
-    update_chart_layout(fig_area, "Global Sales Trend + Moving Average")
+    # Update layout agar tooltip formatnya rapi (2 desimal)
+    fig_area.update_traces(hovertemplate='%{y:.2f} M') 
+    update_chart_layout(fig_area, f"{selected_region_label} Trend + Moving Average")
     st.plotly_chart(fig_area, use_container_width=True)
 
 with tab2:
+    # 4. Bar Chart juga mengikuti pilihan wilayah
     fig_bar = px.bar(
-        sales_yearly, x="Year", y="Global_Sales", color="Genre",
-        color_discrete_sequence=NEON_PALETTE
+        sales_yearly, 
+        x="Year", 
+        y=y_col, 
+        color="Genre",
+        color_discrete_sequence=NEON_PALETTE,
+        labels={y_col: f"{selected_region_label} (Millions)", "Year": "Year"}
     )
-    update_chart_layout(fig_bar, "")
+    
+    fig_bar.update_traces(hovertemplate='%{y:.2f} M')
+    update_chart_layout(fig_bar, f"{selected_region_label} Breakdown by Genre")
     st.plotly_chart(fig_bar, use_container_width=True)
+    
 # --- CHAPTER 2: UNIVERSAL COMPARISON ---
 st.markdown("---")
 st.header("2. Sales Showdown ")
